@@ -29,49 +29,47 @@ namespace AutoRouteTable.Function
                 Console.WriteLine("Failed to get ServiceTags: " + e.Message);
             }
             if(serviceTags != null)
-            {
+            {   string Tag = GetEnvironmentVariable("rt-tag")
                 JArray routeTables = RouteTables.GetRouteTables(subscriptionId);
                 foreach (JToken token in routeTables)
                 {
                     JObject RouteTable = JObject.Parse(token.ToString());
                     JObject RtProperties = JObject.Parse(RouteTable.Property("properties").Value.ToString());
                     List<JObject> routes = RtProperties.Property("routes").Value.ToObject<List<JObject>>();
-                    if (RouteTable.ContainsKey("tags"))
+                    if (RouteTable.property("name") == GetEnvironmentVariable("rt-name"))
                     {
-                        JObject RtTags = JObject.Parse(RouteTable.Property("tags").Value.ToString());
-                        routes.RemoveAll(x => x.Property("name").Value.ToString().Contains("AutoRoute-"));
-                        if (RtTags.ContainsKey("AutoRoute"))
+                        string[] requiredServiceTags = GetEnvironmentVariable("rt-tag").Split(",");
+                        JObject tagRoutesProperties;
+                        foreach (string Tag in requiredServiceTags)
                         {
-                            string[] requiredServiceTags = RtTags.Property("AutoRoute").Value.ToString().Split(",");
-                            JObject tagRoutesProperties;
-                            foreach (string Tag in requiredServiceTags)
+                            try
                             {
-                                try
+                                tagRoutesProperties = JObject.Parse(serviceTags.Find(x => x.Property("name").Value.ToString() == Tag).Property("properties").Value.ToString());
+                            }
+                            catch
+                            {
+                                tagRoutesProperties = null;
+                            }
+                            if (tagRoutesProperties != null)
+                            {
+                                int count = 0;
+                                string routeName = "AutoRoute-" + Tag + "-" + tagRoutesProperties.Property("changeNumber").Value.ToString() + "-" + count.ToString();
+                                routes.RemoveAll(x => x.Property("name").Value.ToString().Contains(Tag + "-"));
+                                foreach (string prefix in tagRoutesProperties.Property("addressPrefixes").Value.ToObject<List<string>>())
                                 {
-                                    tagRoutesProperties = JObject.Parse(serviceTags.Find(x => x.Property("name").Value.ToString() == Tag).Property("properties").Value.ToString());
-                                }
-                                catch
-                                {
-                                    tagRoutesProperties = null;
-                                }
-                                if (tagRoutesProperties != null)
-                                {
-                                    int count = 0;
-                                    string routeName = "AutoRoute-" + Tag + "-" + tagRoutesProperties.Property("changeNumber").Value.ToString() + "-" + count.ToString();
-                                    routes.RemoveAll(x => x.Property("name").Value.ToString().Contains(Tag + "-"));
-                                    foreach (string prefix in tagRoutesProperties.Property("addressPrefixes").Value.ToObject<List<string>>())
-                                    {
-                                        routes.Add(JObject.Parse("{\"name\": \"" + routeName + "\",\"properties\": {\"addressPrefix\": \"" + prefix + "\",\"nextHopType\": \"Internet\"}}"));
-                                        count++;
-                                        routeName = "AutoRoute-" + Tag + "-" + tagRoutesProperties.Property("changeNumber").Value.ToString() + "-" + count.ToString();
-                                    }                                    
-                                }
-                                else
-                                {
-                                    //No Service Tag Found
+                                    routes.Add(JObject.Parse("{\"name\": \"" + routeName + "\",\"properties\": {\"addressPrefix\": \"" + prefix + "\",\"nextHopType\": \"Internet\"}}"));
+                                    count++;
+                                    routeName = "AutoRoute-" + Tag + "-" + tagRoutesProperties.Property("changeNumber").Value.ToString() + "-" + count.ToString();
                                 }
                             }
-                        }
+                            else
+                            {
+                                //No Service Tag Found
+                            }
+                     }
+                    else
+                    {
+                        //No Service Tag Found
                     }
                     string routeTxt = JsonConvert.SerializeObject(routes);
                     RtProperties.Remove("routes");
